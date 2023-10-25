@@ -1,5 +1,10 @@
 #!/bin/sh
 
+ZIG_TRIPLE=$1
+ZIG_OPTIMIZE=$2
+echo "ZIG_TRIPLE=$ZIG_TRIPLE ZIG_OPTIMIZE=$ZIG_OPTIMIZE"
+
+shift 2
 echo "args to run: $@"
 
 apk add musl-dev

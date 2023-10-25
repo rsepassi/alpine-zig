@@ -43,6 +43,8 @@ pub fn build(b: *std.Build) !void {
 const SandboxConfig = struct {
     build_dir: []const u8,
     outputs: []const []const u8,
+    target: std.zig.CrossTarget = .{},
+    optimize: std.builtin.Mode = .Debug,
 };
 
 pub fn addSandboxBuild(b: *std.Build, config: SandboxConfig) *SandboxBuildStep {
@@ -95,6 +97,10 @@ const SandboxBuildStep = struct {
         build_script.addArg(scratch_path);
         // OUT_DIR
         build_script.addArg(out_path);
+        // ZIG_TRIPLE
+        build_script.addArg(try config.target.zigTriple(b.allocator));
+        // ZIG_OPTIMIZE
+        build_script.addArg(@tagName(config.optimize));
 
         // TODO: update name
         var self = try b.allocator.create(@This());

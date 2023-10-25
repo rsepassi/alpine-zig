@@ -22,6 +22,10 @@ Usage:
     #!/bin/sh
     set -e
 
+    # The first 2 arguments will be
+    ZIG_TRIPLE=$1
+    ZIG_OPTIMIZE=$2
+
     # Use Alpine packages, which get cached in the global Zig cache
     apk add gcc musl-dev make
 
@@ -48,6 +52,8 @@ Usage:
             "foo/hi",
             "bar",
         },
+        .target = target,
+        .optimize = optimize,
     });
 
     // You can add additional arguments to the build script

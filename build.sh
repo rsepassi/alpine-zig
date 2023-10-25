@@ -60,7 +60,7 @@ $BWRAP_BIN \
   --setenv USER root \
   --setenv PATH "/sbin:/usr/sbin:/bin:/usr/bin" \
   --bind $OUT_DIR /zig-out \
-  /root/build/build "$EXTRA_ARGS"
+  /root/build/build $EXTRA_ARGS
 
 # Clean up
 rm -rf $SCRATCH_DIR/*
