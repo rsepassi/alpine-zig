@@ -1,0 +1,11 @@
+#!/bin/sh
+
+echo "args to run: $@"
+
+apk add musl-dev
+
+echo "hi from build"
+
+mkdir -p /zig-out/foo
+echo "foobar" > /zig-out/foo/bar
+echo "hello there" > /zig-out/hi
