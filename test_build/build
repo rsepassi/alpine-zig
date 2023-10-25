@@ -4,7 +4,7 @@ echo "args to run: $@"
 
 apk add musl-dev
 
-echo "hi from build"
+echo "hi from build $PWD"
 
 mkdir -p /zig-out/foo
 echo "foobar" > /zig-out/foo/bar

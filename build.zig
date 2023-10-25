@@ -5,13 +5,6 @@ const package_name = "alpine-zig";
 const alpine_version_str = "3.18.4";
 
 pub fn build(b: *std.Build) !void {
-    const target = b.standardTargetOptions(.{
-        .default_target = std.zig.CrossTarget{
-            .abi = .musl,
-        },
-    });
-    const optimize = b.standardOptimizeOption(.{});
-
     for (&[_][]const u8{
         "alpine-aarch64.tar.gz",
         "alpine-arm.tar.gz",
@@ -31,17 +24,15 @@ pub fn build(b: *std.Build) !void {
     // Test
     {
         const sbox = addSandboxBuild(b, .{
-            .build_dir = .{ .path = "test_build" },
+            .build_dir = "test_build",
             .outputs = &[_][]const u8{
                 "hi",
                 "foo/bar",
             },
-            .target = target,
-            .optimize = optimize,
         });
 
-        const install = b.addInstallFile(sbox.outputs[0], "hi");
-        install.step.dependOn(&b.addInstallFile(sbox.outputs[1], "foobar").step);
+        const install = b.addInstallFile(sbox.outputs[0], "test/hi");
+        install.step.dependOn(&b.addInstallFile(sbox.outputs[1], "test/foobar").step);
 
         const test_step = b.step("test", "Run test");
         test_step.dependOn(&install.step);
@@ -50,12 +41,8 @@ pub fn build(b: *std.Build) !void {
 }
 
 const SandboxConfig = struct {
-    build_dir: std.Build.LazyPath,
+    build_dir: []const u8,
     outputs: []const []const u8,
-    target: std.zig.CrossTarget = .{
-        .abi = .musl,
-    },
-    optimize: std.builtin.Mode = .ReleaseFast,
 };
 
 pub fn addSandboxBuild(b: *std.Build, config: SandboxConfig) *SandboxBuildStep {
@@ -66,17 +53,17 @@ const SandboxBuildStep = struct {
     step: std.Build.Step,
     config: SandboxConfig,
     outputs: []std.Build.LazyPath,
+    script: *std.Build.Step.Run,
 
+    // Internal
     generated: []std.Build.GeneratedFile,
 
     fn create(b: *std.Build, config: SandboxConfig) !*@This() {
         const bwrap_dep = b.dependency("bubblewrap_zig", .{
-            .target = config.target,
-            .optimize = config.optimize,
         });
         const bwrap = bwrap_dep.artifact("bwrap");
 
-        const arch = config.target.cpu_arch orelse b.host.target.cpu.arch;
+        const arch = b.host.target.cpu.arch;
         const tarname = switch (arch) {
             .x86_64 => "alpine-x86_64.tar.gz",
             .aarch64 => "alpine-aarch64.tar.gz",
@@ -93,6 +80,7 @@ const SandboxBuildStep = struct {
 
         // TODO: this needs to use a alpine-zig binary...
         const build_script = b.addSystemCommand(&[_][]const u8{try b.build_root.join(b.allocator, &[_][]const u8{"build.sh"})});
+        build_script.has_side_effects = true;
 
         // BWRAP_BIN
         build_script.addArtifactArg(bwrap);
@@ -102,12 +90,13 @@ const SandboxBuildStep = struct {
         // APK_CACHE_DIR
         build_script.addArg(try b.global_cache_root.join(b.allocator, &[_][]const u8{ package_name, alpine_version_str, @tagName(arch) }));
         // BUILD_DIR
-        build_script.addFileArg(config.build_dir);
+        build_script.addArg(config.build_dir);
         // SCRATCH_DIR
         build_script.addArg(scratch_path);
         // OUT_DIR
         build_script.addArg(out_path);
 
+        // TODO: update name
         var self = try b.allocator.create(@This());
         self.* = .{
             .step = std.Build.Step.init(.{
@@ -118,6 +107,7 @@ const SandboxBuildStep = struct {
             }),
             .config = config,
             .outputs = try b.allocator.alloc(std.Build.LazyPath, config.outputs.len),
+            .script = build_script,
             .generated = try b.allocator.alloc(std.Build.GeneratedFile, config.outputs.len),
         };
 
