@@ -19,16 +19,23 @@ Usage:
 ```
 # my_repo/build_complex_thing/build
 
-#!/bin/sh
-apk add gcc musl-dev make  # These are cached in the global Zig cache
-cd foo
-./configure
-make
+    #!/bin/sh
+    set -e
 
-# Store all outputs in /zig-out
-mkdir -p /zig-out/foo
-mv some_artifact /zig-out/foo/hi
-mv another_artifact /zig-out/bar
+    # Use Alpine packages, which get cached in the global Zig cache
+    apk add gcc musl-dev make
+
+    # Do whatever. You have access to the whole filesystem.
+    # Everything except for /zig-out gets thrown away.
+    cd foo
+    ./configure
+    make
+    
+    # Store all outputs in /zig-out
+    mkdir -p /zig-out/foo
+    mv some_artifact /zig-out/foo/hi
+    mv another_artifact /zig-out/bar
+
 
 # my_repo/build.zig
 
