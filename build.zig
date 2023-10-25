@@ -6,10 +6,10 @@ const alpine_version_str = "3.18.4";
 
 pub fn build(b: *std.Build) !void {
     for (&[_][]const u8{
-        "alpine-aarch64.tar.gz",
-        "alpine-arm.tar.gz",
-        "alpine-x86_64.tar.gz",
-        "alpine-x86.tar.gz",
+        "alpine/alpine-aarch64.tar.gz",
+        "alpine/alpine-arm.tar.gz",
+        "alpine/alpine-x86_64.tar.gz",
+        "alpine/alpine-x86.tar.gz",
         "build.sh",
     }) |tar| {
         b.getInstallStep().dependOn(
@@ -86,7 +86,7 @@ const SandboxBuildStep = struct {
         build_script.addArtifactArg(bwrap);
         // TODO: this needs to use a alpine-zig tar file...
         // ALPINE_TAR
-        build_script.addArg(try b.build_root.join(b.allocator, &[_][]const u8{tarname}));
+        build_script.addArg(try b.build_root.join(b.allocator, &[_][]const u8{"alpine", tarname}));
         // APK_CACHE_DIR
         build_script.addArg(try b.global_cache_root.join(b.allocator, &[_][]const u8{ package_name, alpine_version_str, @tagName(arch) }));
         // BUILD_DIR
