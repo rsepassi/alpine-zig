@@ -1,19 +1,19 @@
 #!/bin/sh
 # Called from build.zig
 
-exec >/dev/null 2>&1
-
 set -e
 
+# Script args
 BWRAP_BIN=$1
 ALPINE_TAR=$2
 APK_CACHE_DIR=$3
 BUILD_DIR=$4
 SCRATCH_DIR=$5
 OUT_DIR=$6
+OUT_OK=$7
+shift 7
 
 # Remaining args go to build script
-shift 6
 EXTRA_ARGS="$@"
 
 mkdir -p $APK_CACHE_DIR
@@ -64,3 +64,5 @@ $BWRAP_BIN \
 
 # Clean up
 rm -rf $SCRATCH_DIR/*
+
+touch $OUT_OK

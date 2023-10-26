@@ -65,5 +65,4 @@ Usage:
 
 ## Todos
 
-* Fix directory naming and caching
-* Capture logs ([bug](https://github.com/ziglang/zig/issues/17715))
+* Test dependent package (e.g. Linux)

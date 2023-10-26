@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) !void {
     {
         const sbox = addSandboxBuild(b, .{
             .build_dir = "test_build",
-            .outputs = &[_][]const u8{
+            .outputs = &.{
                 "hi",
                 "foo/bar",
             },
@@ -41,6 +41,7 @@ pub fn build(b: *std.Build) !void {
 }
 
 const SandboxConfig = struct {
+    name: ?[]const u8 = null,
     build_dir: []const u8,
     outputs: []const []const u8,
     target: std.zig.CrossTarget = .{},
@@ -48,7 +49,7 @@ const SandboxConfig = struct {
 };
 
 pub fn addSandboxBuild(b: *std.Build, config: SandboxConfig) *SandboxBuildStep {
-    return SandboxBuildStep.create(b, config) catch @panic("Fail");
+    return SandboxBuildStep.create(b, config) catch @panic("Creating sandbox build step failed");
 }
 
 const SandboxBuildStep = struct {
@@ -56,13 +57,15 @@ const SandboxBuildStep = struct {
     config: SandboxConfig,
     outputs: []std.Build.LazyPath,
     script: *std.Build.Step.Run,
+    stdout: std.Build.LazyPath,
+    stderr: std.Build.LazyPath,
 
     // Internal
     generated: []std.Build.GeneratedFile,
+    ok_file: std.Build.LazyPath,
 
     fn create(b: *std.Build, config: SandboxConfig) !*@This() {
-        const bwrap_dep = b.dependency("bubblewrap_zig", .{
-        });
+        const bwrap_dep = b.dependency("bubblewrap_zig", .{});
         const bwrap = bwrap_dep.artifact("bwrap");
 
         const arch = b.host.target.cpu.arch;
@@ -73,56 +76,77 @@ const SandboxBuildStep = struct {
             .x86 => "alpine-x86.tar.gz",
             else => @panic("Unsupport cpu arch"),
         };
+        const name = config.name orelse config.build_dir;
 
-        // TODO: identify this build for caching
-        // alpine-zig/$arch/hash(build_dir)
-
-        const scratch_path = try b.cache_root.join(b.allocator, &[_][]const u8{try std.fs.path.join(b.allocator, &.{ "tmp", "alpine-zig", "scratch" })});
-        const out_path = try b.cache_root.join(b.allocator, &[_][]const u8{try std.fs.path.join(b.allocator, &.{ "tmp", "alpine-zig", "out" })});
+        const scratch_path = try b.cache_root.join(b.allocator, &[_][]const u8{try std.fs.path.join(b.allocator, &.{ "tmp", "alpine-zig", name, "scratch" })});
+        const out_path = try b.cache_root.join(b.allocator, &[_][]const u8{try std.fs.path.join(b.allocator, &.{ "tmp", "alpine-zig", name, "out" })});
 
         // TODO: this needs to use a alpine-zig binary...
-        const build_script = b.addSystemCommand(&[_][]const u8{try b.build_root.join(b.allocator, &[_][]const u8{"build.sh"})});
-        build_script.has_side_effects = true;
-
-        // BWRAP_BIN
-        build_script.addArtifactArg(bwrap);
+        const build_bin = try b.build_root.join(b.allocator, &[_][]const u8{"build.sh"});
         // TODO: this needs to use a alpine-zig tar file...
-        // ALPINE_TAR
-        build_script.addArg(try b.build_root.join(b.allocator, &[_][]const u8{"alpine", tarname}));
-        // APK_CACHE_DIR
-        build_script.addArg(try b.global_cache_root.join(b.allocator, &[_][]const u8{ package_name, alpine_version_str, @tagName(arch) }));
-        // BUILD_DIR
-        build_script.addArg(config.build_dir);
-        // SCRATCH_DIR
-        build_script.addArg(scratch_path);
-        // OUT_DIR
-        build_script.addArg(out_path);
-        // ZIG_TRIPLE
-        build_script.addArg(try config.target.zigTriple(b.allocator));
-        // ZIG_OPTIMIZE
-        build_script.addArg(@tagName(config.optimize));
+        const alpine_tar = try b.build_root.join(b.allocator, &.{ "alpine", tarname });
 
-        // TODO: update name
+        const build_script = b.addSystemCommand(&.{build_bin});
+        const ok_file = blk: {
+            // BWRAP_BIN
+            build_script.addArtifactArg(bwrap);
+            // ALPINE_TAR
+            build_script.addFileArg(.{ .path = alpine_tar });
+            // APK_CACHE_DIR
+            build_script.addArg(try b.global_cache_root.join(b.allocator, &.{ package_name, alpine_version_str, @tagName(arch) }));
+            // BUILD_DIR
+            build_script.addArg(try b.build_root.join(b.allocator, &.{config.build_dir}));
+            // SCRATCH_DIR
+            build_script.addArg(scratch_path);
+            // OUT_DIR
+            build_script.addArg(out_path);
+            // OUT_OK
+            const ok_file = build_script.addOutputFileArg("ok");
+            // ZIG_TRIPLE
+            build_script.addArg(try config.target.zigTriple(b.allocator));
+            // ZIG_OPTIMIZE
+            build_script.addArg(@tagName(config.optimize));
+
+            break :blk ok_file;
+        };
+
+        build_script.extra_file_dependencies = blk: {
+            // The inputs are everything in config.build_dir.
+            // These are used here only to specify caching dependencies.
+            var input_args = std.ArrayList([]const u8).init(b.allocator);
+            try input_args.append(build_bin);
+            var build_iter_dir = try b.build_root.handle.openIterableDir(config.build_dir, .{});
+            defer build_iter_dir.close();
+            var walker = try build_iter_dir.walk(b.allocator);
+            defer walker.deinit();
+            while (try walker.next()) |entry| {
+                if (entry.kind != .file) continue;
+                const path = try entry.dir.realpathAlloc(b.allocator, entry.basename);
+                try input_args.append(path);
+            }
+            break :blk input_args.items;
+        };
+
         var self = try b.allocator.create(@This());
         self.* = .{
             .step = std.Build.Step.init(.{
                 .id = .custom,
-                .name = "sandbox_build",
+                .name = name,
                 .owner = b,
                 .makeFn = make,
             }),
             .config = config,
             .outputs = try b.allocator.alloc(std.Build.LazyPath, config.outputs.len),
             .script = build_script,
+            .stdout = build_script.captureStdOut(),
+            .stderr = build_script.captureStdErr(),
             .generated = try b.allocator.alloc(std.Build.GeneratedFile, config.outputs.len),
+            .ok_file = ok_file,
         };
-
-        for (self.outputs, 0..) |*out, i| {
-            const gen = &self.generated[i];
-            gen.* = .{ .step = &self.step };
-            out.* = .{ .generated = gen };
+        for (0..config.outputs.len) |i| {
+            self.generated[i] = .{ .step = &self.step };
+            self.outputs[i] = .{ .generated = &self.generated[i] };
         }
-
         self.step.dependOn(&build_script.step);
         return self;
     }
@@ -130,6 +154,10 @@ const SandboxBuildStep = struct {
     fn make(step: *std.Build.Step, _: *std.Progress.Node) !void {
         const b = step.owner;
         var self = @fieldParentPtr(@This(), "step", step);
+
+        std.fs.accessAbsolute(self.ok_file.generated.path.?, .{}) catch {
+            @panic("Sandbox script does not seem to have ended cleanly");
+        };
 
         // Fill outputs
         for (self.config.outputs, 0..) |out, i| {
